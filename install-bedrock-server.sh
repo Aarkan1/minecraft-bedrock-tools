@@ -5,7 +5,7 @@ port='19132'
 portv6='19133'
 server='bedrock-server'
 user='minecraft_user'
-installation_dir="/opt/$server"
+installation_dir="~/$server"
 
 # Check if the script is being run with sudo privileges.
 if [ "$(id -u)" != "0" ]; then

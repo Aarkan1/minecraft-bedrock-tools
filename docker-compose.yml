@@ -1,71 +1,18 @@
-# Docker Compose configuration for Minecraft Bedrock Edition Server
-# This containerizes the manually installed Bedrock server from the install script
-version: "3.8"
-
 services:
-  bedrock-server:
-    # Use debian slim image to mirror the installation script environment
-    # This allows us to run the same bedrock_server binary that was downloaded
-    image: debian:12-slim
-
-    # Dynamic container name based on the directory name to avoid conflicts
-    # This ensures multiple installations can run simultaneously
-    container_name: bedrock-server-${PWD##*/}
-
-    # Restart policy to ensure server stays running
+  minecraft:
+    # This tells Docker to build the Dockerfile in the current directory.
+    build: .
+    container_name: bedrock-server
     restart: unless-stopped
-
-    # Keep container running and start the bedrock server
-    # This mimics what supervisor was doing in the install script
-    command: >
-      bash -c "
-        cd /opt/bedrock-server &&
-        export LD_LIBRARY_PATH=/opt/bedrock-server &&
-        ./bedrock_server
-      "
-
-    # Working directory matches the installation script path
-    working_dir: /opt/bedrock-server
-
-    # Run as non-root user for security (mimics minecraft_user from script)
-    user: "1000:1000"
-
-    # Port mappings - expose Minecraft ports to host
-    # These match the ports configured in the install script
     ports:
-      - "19132:19132/udp" # Primary Minecraft Bedrock port (matches $port variable)
-      - "19133:19133/udp" # IPv6 Minecraft Bedrock port (matches $portv6 variable)
-
-    # Volume mounts to access the installed server files
-    # Mount the current directory (where this docker-compose.yml is located)
-    # This works for any installation directory since the compose file is copied there
+      # Exposes the standard Bedrock server port to your network.
+      - "19132:19132/udp"
     volumes:
-      # Mount the current installation directory to the container
-      - .:/opt/bedrock-server
-
-      # Mount logs directory for easy access
-      - ./logs:/opt/bedrock-server/logs
-
-    # Resource limits to prevent excessive resource usage
-    deploy:
-      resources:
-        limits:
-          # Limit memory usage (adjust based on your server needs)
-          memory: 2G
-        reservations:
-          # Reserve minimum memory for stable operation
-          memory: 512M
-
-    # Environment variables for the server process
-    # Set LD_LIBRARY_PATH as done in the supervisor config
-    environment:
-      LD_LIBRARY_PATH: "/opt/bedrock-server"
-
-    # Health check to monitor if the server is responding on the correct port
-    # This replaces the port check that was done at the end of install script
-    healthcheck:
-      test: ["CMD", "bash", "-c", "ss -nlup | grep -q ':19132'"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      # This is the most important part. It links a folder on your computer
+      # (./minecraft-data) to the /data folder inside the container.
+      # All worlds, configs, and backups will be stored here safely.
+      - ./minecraft-server-data:/data
+    # These two lines are essential for attaching to the server console
+    # so you can run in-game commands.
+    stdin_open: true
+    tty: true

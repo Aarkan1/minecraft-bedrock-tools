@@ -37,7 +37,7 @@ fi
 # Update package lists and install required dependencies
 # Replace supervisor with Docker and Docker Compose
 apt-get update -y
-apt-get install -y wget unzip curl docker.io docker-compose-plugin
+apt-get install -y wget zip unzip curl docker.io docker-compose-plugin
 
 # Enable and start Docker service
 systemctl enable docker

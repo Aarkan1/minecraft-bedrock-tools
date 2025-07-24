@@ -35,15 +35,10 @@ elif ss -nlup | grep -q ":$portv6"; then
 fi
 
 # Update package lists and install required dependencies
-# Replace supervisor with Docker and Docker Compose
 apt-get update -y
-apt-get install -y wget unzip curl docker.io docker-compose-plugin
+apt-get install -y wget unzip supervisor curl
 
-# Enable and start Docker service
-systemctl enable docker
-systemctl start docker
-
-# Download and install latest Minecraft Bedrock Edition Server.
+# Download and install lateast Minecraft Bedrock Edition Server.
 link=$(curl -s https://net-secondary.web.minecraft-services.net/api/v1.0/download/links | grep -oP '"downloadType":"serverBedrockLinux"[^}]*"downloadUrl":"\K[^"]+')
 
 zip_file=$(basename "$link")
@@ -54,9 +49,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Create user with UID 1000 to match Docker Compose configuration
-useradd -M -u 1000 $user 2>/dev/null || usermod -u 1000 $user
-usermod -L $user
+useradd -M $user && usermod -L $user
 
 unzip -o /tmp/"$zip_file" -d $installation_dir
 
@@ -65,35 +58,29 @@ sed -i "s/server-name=.*/server-name=$server/" "$installation_dir/server.propert
 sed -i "s/server-port=.*/server-port=$port/" "$installation_dir/server.properties"
 sed -i "s/server-portv6=.*/server-portv6=$portv6/" "$installation_dir/server.properties"
 
-# Set proper ownership for Docker Compose (UID 1000)
-chown -R 1000:1000 $installation_dir
+chown -R $user:$user $installation_dir
 
 echo "Cleaning up..."
+
 rm /tmp/"$zip_file"
 
-# Start Minecraft Server using Docker Compose instead of Supervisor
-echo "Starting Minecraft Server with Docker Compose..."
+# Configure Supervisor to monitor and control Minecraft Server.
 
-# Navigate to the directory containing docker-compose.yml
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+tee "/etc/supervisor/conf.d/${server}-process.conf" > /dev/null << EOF
+    [program:$server]
+    command=$installation_dir/bedrock_server                                  
+    environment=LD_LIBRARY_PATH=$installation_dir
+    directory=$installation_dir
+    user=$user
+    autostart=true
+    autorestart=true
+    redirect_stderr=true
+    stdout_logfile=$installation_dir/$server.out.log
+EOF
 
-# Copy docker-compose.yml to installation directory for self-contained setup
-echo "Setting up Docker Compose configuration..."
-cp "$script_dir/docker-compose.yml" "$installation_dir/"
-
-# Navigate to installation directory to run Docker Compose
-cd "$installation_dir"
-
-# Start the server using Docker Compose
-docker compose up -d
-
-# Wait for container to start
-sleep 5
-
-# Check container status
-docker compose ps
-
-# ... existing code ...
+supervisorctl update
+sleep 3
+supervisorctl status
 
 # Check if iptables installed
 if command -v iptables &>/dev/null; then
@@ -112,20 +99,13 @@ fi
 
 sleep 5
 
-# Check if server is running by checking container status and port
-if docker compose ps | grep -q "Up" && ss -nlup | grep -q ":$port"; then
+if ss -nlup | grep -q ":$port"; then
     echo
     echo "Installation completed. Your server is running and listening on UDP port $port."
     echo
     echo "Please ensure that UDP port $port is also open in your security list/group."
     echo
-    echo "Server management commands:"
-    echo "  Start server:     docker compose up -d"
-    echo "  Stop server:      docker compose down"
-    echo "  View logs:        docker compose logs -f"
-    echo "  Server console:   docker compose exec bedrock-server bash"
-    echo "  Restart server:   docker compose restart"
+    echo "To interact with Minecraft Server command-line console run: \"sudo supervisorctl fg $server\""
 else
     echo "Port $port UDP is not listening. Installation may have failed or the server is not running."
-    echo "Check logs with: docker compose logs"
 fi

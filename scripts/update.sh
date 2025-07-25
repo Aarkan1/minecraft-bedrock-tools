@@ -22,7 +22,7 @@ if [[ ! -z "$DOWNLOAD_URL" ]]; then
 fi
 
 # Check if server executable exists
-if [[ ! -f "/data/bedrock_server" ]]; then
+if [[ ! -f "/data/bedrock_server/bedrock_server" ]]; then
     echo "📥 No server found, downloading for the first time..."
     NEED_DOWNLOAD=true
 else
@@ -73,6 +73,19 @@ if [[ "$NEED_DOWNLOAD" == "true" ]]; then
     # Extract server files (preserves existing worlds and configs)
     unzip -o bedrock.zip -d bedrock_server
     rm bedrock.zip
+
+    # Replace template variables in server.properties with environment variables
+    if [[ -f /data/server.properties ]]; then
+        echo "🔧 Configuring server.properties with environment variables..."
+        
+        # Replace SERVER_PORT placeholder with actual environment variable value
+        sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" /data/server.properties
+        
+        # Replace SERVER_PORT_V6 placeholder with actual environment variable value  
+        sed -i "s/{{SERVER_PORT_V6}}/${SERVER_PORT_V6}/g" /data/server.properties
+        
+        echo "✅ Server properties configured with ports: IPv4=${SERVER_PORT}, IPv6=${SERVER_PORT_V6}"
+    fi
 
     # Copy over the worlds, permissions, server.properties, and allowlist.json
     cp -r /data/worlds/* /data/bedrock_server/worlds/

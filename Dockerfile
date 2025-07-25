@@ -23,6 +23,7 @@ WORKDIR /data
 # Copy the script files from the scripts directory
 COPY --chown=mc:mc scripts/update.sh /scripts/update.sh
 COPY --chown=mc:mc scripts/backup.sh /scripts/backup.sh
+COPY --chown=mc:mc scripts/command.sh /scripts/command.sh
 COPY --chown=mc:mc scripts/run.sh /scripts/run.sh
 
 # Fix line endings for all scripts (convert Windows CRLF to Unix LF)

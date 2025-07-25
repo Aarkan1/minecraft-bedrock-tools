@@ -2,12 +2,6 @@
 FROM debian:12-slim
 
 # Install necessary tools:
-# curl: to find the latest version URL
-# wget: to download files
-# unzip: to extract the server
-# zip: to create backups
-# cron: to schedule periodic tasks (backups, update checks)
-# procps: for 'pkill' to gracefully restart the server for updates
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
@@ -15,75 +9,141 @@ RUN apt-get update && apt-get install -y \
     zip \
     cron \
     procps \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user 'mc' to run the server for better security.
-# Also create the directories for the server data and our management scripts.
 RUN useradd -m -s /bin/bash mc && \
     mkdir -p /data /scripts && \
     chown -R mc:mc /data /scripts
 
-# Switch to the non-root user.
-USER mc
 # Set the working directory to /data. All server files will live here.
 WORKDIR /data
 
-
-# --- Embed Management Scripts ---
-# We use 'COPY --chown' with a HEREDOC (<<-'EOF') to create script files
-# inside the image owned by our 'mc' user.
-
-# 1. The Update Script
+# 1. Smart Update Script - Only downloads when needed
 COPY --chown=mc:mc <<-'EOF' /scripts/update.sh
 #!/bin/bash
 set -e
-echo "🔎 Checking for latest server version..."
 
-# Scrape the official Minecraft website to find the download URL for the Linux server.
-DOWNLOAD_URL=$(curl -sL https://www.minecraft.net/en-us/download/server/bedrock | grep -o 'https://minecraft.azureedge.net/bin-linux/bedrock-server-[0-9\.]*\.zip' | head -n 1)
+# Always ensure we're in the correct directory
+cd /data
 
-if [[ -z "$DOWNLOAD_URL" ]]; then
-    echo "❌ Could not find the latest version download URL. Exiting."
-    # If the check fails, we still try to run with what we have.
-    exit 0
+echo "🔎 Checking server status..."
+
+# Function to get the latest version from Minecraft's official API
+get_latest_version() {
+    # Try the official Minecraft API first
+    LATEST_VERSION=$(curl -s "https://api.minecraft.net/v1/download/latest" | jq -r '.downloads.bedrock_server.version' 2>/dev/null)
+    
+    # Fallback: Try scraping the download page
+    if [[ -z "$LATEST_VERSION" || "$LATEST_VERSION" == "null" ]]; then
+        echo "📡 Trying alternative method to get version..." >&2
+        DOWNLOAD_URL=$(curl -sL https://www.minecraft.net/en-us/download/server/bedrock | grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-[0-9\.]*\.zip' | head -n 1)
+        if [[ ! -z "$DOWNLOAD_URL" ]]; then
+            LATEST_VERSION=$(echo "$DOWNLOAD_URL" | grep -o '[0-9\.]*\.zip' | sed 's/\.zip//')
+        fi
+    fi
+    
+    # Final fallback: Use a known stable version
+    if [[ -z "$LATEST_VERSION" || "$LATEST_VERSION" == "null" ]]; then
+        echo "⚠️ Could not determine latest version, using fallback version..." >&2
+        LATEST_VERSION="1.21.51.02"
+    fi
+    
+    echo "$LATEST_VERSION"
+}
+
+# Get the latest version (needed for both first install and updates)
+LATEST_VERSION=$(get_latest_version)
+
+# Check if server executable exists
+if [[ ! -f "/data/bedrock_server" ]]; then
+    echo "📥 No server found, downloading for the first time..."
+    NEED_DOWNLOAD=true
+else
+    echo "✅ Server executable found, checking version..."
+    CURRENT_VERSION=$(cat /data/version.txt 2>/dev/null || echo "unknown")
+    
+    echo "Current version: $CURRENT_VERSION"
+    echo "Latest version: $LATEST_VERSION"
+    
+    if [[ "$CURRENT_VERSION" == "$LATEST_VERSION" ]]; then
+        echo "👍 Server is already up to date."
+        NEED_DOWNLOAD=false
+    else
+        echo "🔄 Version mismatch, update needed..."
+        NEED_DOWNLOAD=true
+    fi
 fi
 
-LATEST_VERSION=$(echo "$DOWNLOAD_URL" | grep -o '[0-9\.]*\.zip' | sed 's/\.zip//')
-# Read the currently installed version from a file in our data volume.
-CURRENT_VERSION=$(cat version.txt 2>/dev/null || echo "0.0.0")
+# Download and extract only if needed
+if [[ "$NEED_DOWNLOAD" == "true" ]]; then
+    echo "🔽 Downloading Bedrock server version: $LATEST_VERSION..."
+    
+    # Construct download URL
+    DOWNLOAD_URL="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${LATEST_VERSION}.zip"
+    
+    # Download with retry logic
+    for i in {1..3}; do
+        if wget --header="Referer: https://www.minecraft.net/en-us/download/server/bedrock" --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36" --timeout=30 --tries=3 -O bedrock.zip "$DOWNLOAD_URL"; then
+            echo "📦 Download successful, extracting..."
+            break
+        else
+            echo "❌ Download attempt $i failed..."
+            if [[ $i -eq 3 ]]; then
+                echo "💥 All download attempts failed. Cannot update server."
+                # If we have an existing server, use it; otherwise exit
+                if [[ ! -f "/data/bedrock_server" ]]; then
+                    exit 1
+                else
+                    echo "🔄 Using existing server installation..."
+                    exit 0
+                fi
+            fi
+            sleep 5
+        fi
+    done
+    
+    # Enable debug mode for this section
+    set -x
+    
+    # Extract server files (preserves existing worlds and configs)
+    unzip -o bedrock.zip -d bedrock_server
+    rm bedrock.zip
 
-echo "Latest version: $LATEST_VERSION | Current version: $CURRENT_VERSION"
-
-# If versions match, there's nothing to do.
-if [[ "$LATEST_VERSION" == "$CURRENT_VERSION" ]]; then
-    echo "👍 Server is already up to date."
-    exit 0
+    # Copy over the worlds, permissions, server.properties, and allowlist.json
+    cp -r /data/worlds/* /data/bedrock_server/worlds/
+    cp -r /data/permissions.json /data/bedrock_server/permissions.json
+    cp -r /data/server.properties /data/bedrock_server/server.properties
+    cp -r /data/allowlist.json /data/bedrock_server/allowlist.json
+    
+    # Make sure the server is executable
+    chmod +x bedrock_server
+    
+    # Save the version info
+    echo "$LATEST_VERSION" > version.txt
+    echo "✅ Server updated to version $LATEST_VERSION"
+else
+    echo "✅ Server is ready (no download needed)"
 fi
 
-echo "🔽 Downloading new version: $LATEST_VERSION..."
-wget -qO bedrock.zip "$DOWNLOAD_URL"
-
-# The unzip command will overwrite old server files but leave your 'worlds',
-# 'server.properties', and other data files untouched.
-echo "📦 Extracting server files..."
-unzip -o bedrock.zip
-rm bedrock.zip
-
-# Save the new version number to our data volume for future checks.
-echo "$LATEST_VERSION" > version.txt
-echo "✅ Update to $LATEST_VERSION complete."
+# Ensure proper ownership
+chown -R mc:mc /data
 EOF
 
-# 2. The Backup Script (keeps 30 backups at 20 min intervals)
+# 2. The Backup Script (same as before)
 COPY --chown=mc:mc <<-'EOF' /scripts/backup.sh
 #!/bin/bash
+
+# Always ensure we're in the correct directory  
+cd /data
+
 MAX_BACKUPS=30
 BACKUP_DIR="/data/backups"
 SOURCE_DIR="/data/worlds"
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 ARCHIVE_NAME="$BACKUP_DIR/backup-$TIMESTAMP.zip"
 
-# Create the backups directory if it doesn't exist.
 mkdir -p $BACKUP_DIR
 
 if [ -z "$(ls -A $SOURCE_DIR 2>/dev/null)" ]; then
@@ -91,71 +151,63 @@ if [ -z "$(ls -A $SOURCE_DIR 2>/dev/null)" ]; then
     exit 0
 fi
 
-echo "Backing up worlds to $ARCHIVE_NAME..."
-# Create a zip archive of the worlds folder.
+echo "🗜️ Backing up worlds to $ARCHIVE_NAME..."
 zip -r "$ARCHIVE_NAME" "$SOURCE_DIR" > /dev/null
 
-echo "Cleaning up old backups (keeping last $MAX_BACKUPS)..."
-# Find all zip files, sort by time, skip the newest 30, and delete the rest.
+echo "🧹 Cleaning up old backups (keeping last $MAX_BACKUPS)..."
 ls -tp "$BACKUP_DIR" | grep '\.zip$' | tail -n +$((MAX_BACKUPS + 1)) | xargs -I {} rm -- "$BACKUP_DIR/{}"
+echo "✅ Backup complete"
 EOF
 
-# 3. The Main Run Script (Server Supervisor)
+# 3. The Main Run Script with auto-restart loop
 COPY --chown=mc:mc <<-'EOF' /scripts/run.sh
 #!/bin/bash
-# This script is the container's entrypoint. It supervises the server process.
+echo "🚀 Starting Minecraft Bedrock Server Manager..."
 
-# Set up a trap to gracefully shut down the server when the container is stopped.
-trap 'echo "Stopping server..."; kill -SIGTERM $SERVER_PID; wait $SERVER_PID; exit 143' SIGTERM SIGINT
+# Always ensure we're in the correct directory  
+cd /data
 
-# Set up the scheduled tasks (cron jobs).
-# This creates a crontab file that runs as the 'mc' user.
-(crontab -l 2>/dev/null; echo "*/20 * * * * /bin/bash /scripts/backup.sh") | crontab -
-(crontab -l 2>/dev/null; echo "0 * * * * /bin/bash /scripts/check_and_restart.sh") | crontab -
+# Set up trap for graceful shutdown
+trap 'echo "🛑 Shutting down server..."; kill -SIGTERM $SERVER_PID 2>/dev/null; wait $SERVER_PID 2>/dev/null; exit 143' SIGTERM SIGINT
 
-# This is the main loop. If the server crashes or is stopped for an update,
-# this loop will ensure it comes back online automatically.
+# Set up scheduled tasks for the mc user
+echo "⏰ Setting up scheduled tasks..."
+echo "*/20 * * * * /bin/bash /scripts/backup.sh" | crontab -u mc -
+echo "0 * * * * /bin/bash /scripts/update.sh" | crontab -u mc -
+
+# Main server loop
 while true; do
-    # Run the update script every time before starting.
-    # This ensures on the very first run, and after every restart, we have the latest version.
+    echo "🔄 Running update check..."
     /bin/bash /scripts/update.sh
-
-    # Start the server in the background. The LD_LIBRARY_PATH is required by the executable.
-    LD_LIBRARY_PATH=. ./bedrock_server &
-    # Store the Process ID (PID) of the server.
+    
+    # Verify server files exist before starting
+    if [[ ! -f /data/bedrock_server ]]; then
+        echo "❌ Server executable not found after update check!"
+        exit 1
+    fi
+    
+    echo "🎮 Starting Minecraft Bedrock Server..."
+    # Start server as mc user in background
+    su -c "cd /data && LD_LIBRARY_PATH=. ./bedrock_server" mc &
     SERVER_PID=$!
+    
     echo "✅ Server started with PID: $SERVER_PID"
-
-    # Wait here until the server process stops for any reason.
+    
+    # Wait for server to stop
     wait $SERVER_PID
-
-    echo "Server process stopped. Restarting in 5 seconds..."
+    EXIT_CODE=$?
+    
+    echo "⚠️ Server stopped with exit code: $EXIT_CODE"
+    echo "🔄 Restarting in 5 seconds..."
     sleep 5
 done
 EOF
 
-# 4. The Update Check Script (for Cron)
-COPY --chown=mc:mc <<-'EOF' /scripts/check_and_restart.sh
-#!/bin/bash
-# This script is run by cron every hour to check for updates.
-echo "Running periodic update check..."
-DOWNLOAD_URL=$(curl -sL https://www.minecraft.net/en-us/download/server/bedrock | grep -o 'https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-[0-9\.]*\.zip' | head -n 1)
-LATEST_VERSION=$(echo "$DOWNLOAD_URL" | grep -o '[0-9\.]*\.zip' | sed 's/\.zip//')
-CURRENT_VERSION=$(cat /data/version.txt 2>/dev/null)
-
-if [[ ! -z "$LATEST_VERSION" ]] && [[ "$LATEST_VERSION" != "$CURRENT_VERSION" ]]; then
-    echo "A new version ($LATEST_VERSION) is available. Restarting server to apply update."
-    # This command finds and terminates the running server process.
-    # The main 'run.sh' script will then detect this, loop, and restart the server,
-    # which automatically triggers the update script.
-    pkill bedrock_server
-fi
-EOF
-
-# Make all our scripts executable.
+# Make all scripts executable
 RUN chmod +x /scripts/*.sh
 
-# Finally, set the entrypoint of the container to our main run script.
-# We run this through a root script to start the cron service first.
-# The actual server will still run as the 'mc' user.
-ENTRYPOINT ["/bin/bash", "-c", "sudo cron && /scripts/run.sh"]
+# Run initial update during build (downloads server if needed)
+RUN /bin/bash /scripts/update.sh
+
+# Simple entrypoint
+ENTRYPOINT ["/bin/bash", "-c", "cron && /scripts/run.sh"]

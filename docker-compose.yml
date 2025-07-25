@@ -12,6 +12,12 @@ services:
       # (./minecraft-data) to the /data folder inside the container.
       # All worlds, configs, and backups will be stored here safely.
       - ./minecraft-server-data:/data
+    # Add DNS configuration
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    # Add network mode if needed
+    network_mode: bridge
     # These two lines are essential for attaching to the server console
     # so you can run in-game commands.
     stdin_open: true

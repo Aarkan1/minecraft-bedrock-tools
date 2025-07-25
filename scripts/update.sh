@@ -7,7 +7,14 @@ cd /data
 echo "🔎 Checking server status..."
 
 # Get the latest version from Minecraft website
-DOWNLOAD_URL=$(curl -s https://net-secondary.web.minecraft-services.net/api/v1.0/download/links | grep -oP '"downloadType":"serverBedrockLinux"[^}]*"downloadUrl":"\K[^"]+')
+DOWNLOAD_URL=$(curl -s --max-time 30 \
+    --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" \
+    --header "Accept: application/json" \
+    --header "Accept-Language: en-US,en;q=0.9" \
+    --retry 3 \
+    --retry-delay 2 \
+    https://net-secondary.web.minecraft-services.net/api/v1.0/download/links | \
+    grep -oP '"downloadType":"serverBedrockLinux"[^}]*"downloadUrl":"\K[^"]+')
 echo "Download URL: $DOWNLOAD_URL" || echo "No download URL found"
 if [[ ! -z "$DOWNLOAD_URL" ]]; then
     LATEST_VERSION=$(echo "$DOWNLOAD_URL" | grep -o '[0-9\.]*\.zip' | sed 's/\.zip//')

@@ -3,7 +3,7 @@
 
 # Example:
 # Run the command script as the mc user
-docker exec -it -u mc bedrock-server /scripts/command.sh 'list'
+# docker exec -it -u mc bedrock-server /scripts/command.sh 'list'
 
 if [ $# -eq 0 ]; then
     echo "Usage: $0 'command'"
@@ -18,6 +18,28 @@ if [ ! -p "$COMMAND_PIPE" ]; then
     exit 1
 fi
 
-echo "📤 Sending command: $1"
+# Check if this is a special backup command
+if [ "$1" = "backup-server" ]; then
+    echo "🔄 Running backup script..."
+    /scripts/backup.sh
+    exit 0
+fi
+
+# Check if this is a restore backup command
+if [[ "$1" == restore-backup* ]]; then
+    echo "🔄 Running restore backup script..."
+    # Extract the backup filename if provided (everything after "restore-backup ")
+    backup_file=""
+    if [[ "$1" =~ ^restore-backup[[:space:]]+(.+)$ ]]; then
+        backup_file="${BASH_REMATCH[1]}"
+        /scripts/restore-backup.sh "$backup_file"
+    else
+        # No backup file specified, use latest
+        /scripts/restore-backup.sh
+    fi
+    exit 0
+fi
+
+
+# Send regular command to server pipe
 echo "$1" > "$COMMAND_PIPE"
-echo "✅ Command sent!"

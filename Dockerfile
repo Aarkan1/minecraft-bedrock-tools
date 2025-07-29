@@ -3,6 +3,7 @@ FROM debian:12-slim
 
 # Install necessary tools:
 RUN apt-get update && apt-get install -y \
+    nano \
     curl \
     wget \
     unzip \
@@ -24,6 +25,7 @@ WORKDIR /data
 COPY --chown=mc:mc scripts/update.sh /scripts/update.sh
 COPY --chown=mc:mc scripts/backup.sh /scripts/backup.sh
 COPY --chown=mc:mc scripts/command.sh /scripts/command.sh
+COPY --chown=mc:mc scripts/restore-backup.sh /scripts/restore-backup.sh
 COPY --chown=mc:mc scripts/run.sh /scripts/run.sh
 
 # Fix line endings for all scripts (convert Windows CRLF to Unix LF)
@@ -33,4 +35,4 @@ RUN sed -i 's/\r$//' /scripts/*.sh
 RUN chmod +x /scripts/*.sh
 
 # Simple entrypoint
-ENTRYPOINT ["/bin/bash", "-c", "cron && /scripts/run.sh"]
+ENTRYPOINT ["/bin/bash", "-c", "/scripts/run.sh"]

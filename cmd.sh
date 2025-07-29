@@ -11,10 +11,9 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-echo "📤 Sending bedrock command: $1"
 docker exec -u mc bedrock-server /scripts/command.sh "$1"
 
+sleep 0.5
+
 # Show recent logs to see the response
-echo ""
-echo "📋 Recent server output:"
 docker compose logs --tail 5

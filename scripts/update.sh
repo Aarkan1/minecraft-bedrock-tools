@@ -44,7 +44,7 @@ fi
 # Download and extract only if needed
 if [[ "$NEED_DOWNLOAD" == "true" ]]; then
     echo "🔽 Downloading Bedrock server version: $LATEST_VERSION..."
-    
+
     # Construct download URL
     DOWNLOAD_URL="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${LATEST_VERSION}.zip"
     echo "Download URL: $DOWNLOAD_URL"
@@ -74,28 +74,38 @@ if [[ "$NEED_DOWNLOAD" == "true" ]]; then
     unzip -o bedrock.zip -d bedrock_server
     rm bedrock.zip
 
-    # Replace template variables in server.properties with environment variables
-    if [[ -f /data/server.properties ]]; then
-        echo "🔧 Configuring server.properties with environment variables..."
-        
-        # Replace SERVER_PORT placeholder with actual environment variable value
-        sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" /data/server.properties
-        
-        # Replace SERVER_PORT_V6 placeholder with actual environment variable value  
-        sed -i "s/{{SERVER_PORT_V6}}/${SERVER_PORT_V6}/g" /data/server.properties
-        
-        echo "✅ Server properties configured with ports: IPv4=${SERVER_PORT}, IPv6=${SERVER_PORT_V6}"
-    fi
-
     # Copy over the worlds, permissions, server.properties, and allowlist.json
     cp -r /data/worlds/* /data/bedrock_server/worlds/
     cp -r /data/permissions.json /data/bedrock_server/permissions.json
     cp -r /data/server.properties /data/bedrock_server/server.properties
     cp -r /data/allowlist.json /data/bedrock_server/allowlist.json
-    
+
+    # Configure server.properties in the bedrock_server directory with environment variables
+    if [[ -f /data/bedrock_server/server.properties ]]; then
+        echo "🔧 Configuring bedrock_server/server.properties with environment variables..."
+        # Set default values for environment variables if they are missing
+        SERVER_PORT="${SERVER_PORT:-19132}"
+        SERVER_PORT_V6="${SERVER_PORT_V6:-19133}"
+        SERVER_NAME="${SERVER_NAME:-Bedrock Server}"
+        LEVEL_NAME="${LEVEL_NAME:-level}"
+        GAMEMODE="${GAMEMODE:-survival}"
+        DIFFICULTY="${DIFFICULTY:-hard}"
+        ALLOW_CHEATS="${ALLOW_CHEATS:-false}"
+
+        # Replace placeholders with environment variables (now with defaults)
+        sed -i "s/{{SERVER_PORT}}/${SERVER_PORT}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{SERVER_PORT_V6}}/${SERVER_PORT_V6}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{SERVER_NAME}}/${SERVER_NAME}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{LEVEL_NAME}}/${LEVEL_NAME}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{GAMEMODE}}/${GAMEMODE}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{DIFFICULTY}}/${DIFFICULTY}/g" /data/bedrock_server/server.properties
+        sed -i "s/{{ALLOW_CHEATS}}/${ALLOW_CHEATS}/g" /data/bedrock_server/server.properties
+        echo "✅ Bedrock server properties configured with ports: IPv4=${SERVER_PORT}, IPv6=${SERVER_PORT_V6}"
+    fi
+
     # Make sure the server is executable
     chmod +x bedrock_server
-    
+
     # Save the version info
     echo "$LATEST_VERSION" > version.txt
     echo "✅ Server updated to version $LATEST_VERSION"

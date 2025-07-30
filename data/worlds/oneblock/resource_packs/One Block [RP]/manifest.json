@@ -1,0 +1,17 @@
+{
+    "format_version": 2,
+    "header": {
+      "description": "§l§cOne Block §e[RP]",
+      "name": "§l§6One Block",
+      "uuid": "1a317764-d407-4385-9d26-2fdb60bcf2eb",
+      "version": [1, 0, 0],
+      "min_engine_version": [1, 15, 0]
+    },
+    "modules": [
+        {
+            "type": "resources",
+            "uuid": "b13ca1a4-2452-4b91-beef-36db7033fe3a",
+            "version": [1, 0, 0]
+        } 
+    ]
+  }

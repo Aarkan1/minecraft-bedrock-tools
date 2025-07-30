@@ -7,6 +7,11 @@ services:
     environment:
       - SERVER_PORT=19132
       - SERVER_PORT_V6=19133
+      - SERVER_NAME=oneblock
+      - LEVEL_NAME=oneblock
+      - GAMEMODE=survival
+      - DIFFICULTY=hard
+      - ALLOW_CHEATS=true
     volumes:
       # This is the most important part. It links a folder on your computer
       # (./minecraft-data) to the /data folder inside the container.

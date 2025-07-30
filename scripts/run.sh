@@ -21,6 +21,12 @@ EOF
 cron -f &
 CRON_PID=$!
 
+# Start admin server in the background
+if [[ "$USE_ADMIN" == "true" ]]; then
+    node /admin/server.js &
+    ADMIN_PID=$!
+fi
+
 # Function to cleanup server process
 cleanup_server() {
     local server_pid=$1
@@ -125,6 +131,12 @@ done
 if [[ -n "$CRON_PID" ]] && kill -0 "$CRON_PID" 2>/dev/null; then
     echo "🧹 Stopping cron..."
     kill "$CRON_PID" 2>/dev/null
+fi
+
+# Clean up admin server if it's still running
+if [[ -n "$ADMIN_PID" ]] && kill -0 "$ADMIN_PID" 2>/dev/null; then
+    echo "🧹 Stopping admin server..."
+    kill "$ADMIN_PID" 2>/dev/null
 fi
 
 echo "👋 Server manager stopped"

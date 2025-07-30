@@ -7,6 +7,8 @@ services:
     environment:
       - SERVER_PORT=19132
       - SERVER_PORT_V6=19133
+      - USE_ADMIN=true
+      - ADMIN_PORT=3000
       - SERVER_NAME=oneblock
       - LEVEL_NAME=oneblock
       - GAMEMODE=survival
@@ -14,16 +16,12 @@ services:
       - ALLOW_CHEATS=true
     volumes:
       # This is the most important part. It links a folder on your computer
-      # (./minecraft-data) to the /data folder inside the container.
+      # (./data) to the /data folder inside the container.
       # All worlds, configs, and backups will be stored here safely.
       - ./data:/data
-    # Add DNS configuration
     dns:
       - 8.8.8.8
       - 8.8.4.4
-    # Add network mode if needed
     network_mode: host
-    # These two lines are essential for attaching to the server console
-    # so you can run in-game commands.
     stdin_open: true
     tty: true

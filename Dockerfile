@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
 
 # Create a non-root user 'mc' to run the server for better security.
 RUN useradd -m -s /bin/bash mc && \
-    mkdir -p /data /scripts && \
-    chown -R mc:mc /data /scripts
+    mkdir -p /data /scripts /admin && \
+    chown -R mc:mc /data /scripts /admin
 
 # Set the working directory to /data. All server files will live here.
 WORKDIR /data
@@ -27,6 +27,8 @@ COPY --chown=mc:mc scripts/backup.sh /scripts/backup.sh
 COPY --chown=mc:mc scripts/command.sh /scripts/command.sh
 COPY --chown=mc:mc scripts/restore-backup.sh /scripts/restore-backup.sh
 COPY --chown=mc:mc scripts/run.sh /scripts/run.sh
+COPY --chown=mc:mc admin/server.js /admin/server.js
+COPY --chown=mc:mc admin/frontend /admin/frontend
 
 # Fix line endings for all scripts (convert Windows CRLF to Unix LF)
 RUN sed -i 's/\r$//' /scripts/*.sh
